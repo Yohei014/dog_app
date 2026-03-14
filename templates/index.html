@@ -47,7 +47,9 @@ AI解析中...
 
 <img src="{{image}}" class="image-base">
 
+{% if gradcam %}
 <img src="{{gradcam}}" class="image-overlay" id="gradcam">
+{% endif %}
 
 <input type="range" min="0" max="100" value="50" id="cam-slider">
 
