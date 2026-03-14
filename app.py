@@ -1,5 +1,7 @@
 import os
+# Keras 2 (Legacy) を強制使用
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import json
 import cv2
 import uuid
@@ -7,9 +9,14 @@ import gc
 import numpy as np
 import tensorflow as tf
 from flask import Flask, render_template, request, send_from_directory
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
-from tensorflow.keras.applications.efficientnet import preprocess_input
+from tensorflow import keras
+from tensorflow.keras import preprocessing
+from tensorflow.keras.applications import efficientnet
+
+# 各関数を使いやすい名前に割り当て
+load_model = tf.keras.models.load_model
+image = tf.keras.preprocessing.image
+preprocess_input = tf.keras.applications.efficientnet.preprocess_input
 
 # =========================
 # TensorFlow メモリ・動作設定
