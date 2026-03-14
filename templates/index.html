@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+
+<meta charset="UTF-8">
+<title>犬種判定AI</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="{{ url_for('static', filename='script.js') }}" defer></script>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>🐶 犬種判定AI</h1>
+
+<form method="POST" enctype="multipart/form-data" onsubmit="showLoading()">
+
+<div class="upload-box" id="drop-area">
+
+<p>画像をドラッグ＆ドロップ<br>またはクリックして選択</p>
+
+<input type="file" name="file" id="file-input" accept="image/*">
+
+</div>
+
+<div id="preview-area"></div>
+
+<button type="submit" class="btn">判定する</button>
+
+</form>
+
+<div id="loading" class="loading">
+
+AI解析中...
+
+</div>
+
+{% if image %}
+
+<h2>GradCAM</h2>
+
+<div class="slider-container">
+
+<img src="{{image}}" class="image-base">
+
+<img src="{{gradcam}}" class="image-overlay" id="gradcam">
+
+<input type="range" min="0" max="100" value="50" id="cam-slider">
+
+</div>
+
+<h2>判定結果</h2>
+
+<div class="result-box">
+
+{% for r in results %}
+
+<div class="result-item">
+
+<div class="label">{{r[0]}}</div>
+
+<div class="bar-container">
+
+<div class="bar" style="width: {{r[1]}}%"></div>
+
+</div>
+
+<div class="percent">{{r[1]}}%</div>
+
+</div>
+
+{% endfor %}
+
+</div>
+
+{% endif %}
+
+</div>
+
+</body>
+</html>
