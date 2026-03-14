@@ -15,7 +15,17 @@ from tensorflow.keras.applications.efficientnet import preprocess_input
 # =========================
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-tf.config.set_visible_devices([], "GPU")
+tf.get_logger().setLevel("ERROR")
+
+# GPUを無効化
+try:
+    tf.config.set_visible_devices([], "GPU")
+except:
+    pass
+
+# スレッド制限（メモリ節約）
+tf.config.threading.set_intra_op_parallelism_threads(1)
+tf.config.threading.set_inter_op_parallelism_threads(1)
 
 # =========================
 
@@ -32,7 +42,15 @@ img_size = 300
 # モデルロード
 # =========================
 
+print("Loading model...")
+
 model = load_model("dog_model.h5", compile=False)
+
+print("Model loaded")
+
+# =========================
+# ラベルロード
+# =========================
 
 with open("dog_labels_ja.json", encoding="utf-8") as f:
     dog_labels = json.load(f)
@@ -50,7 +68,7 @@ for folder_name, index in class_indices.items():
         idx_to_class[index] = folder_name
 
 # =========================
-# 画像配信用ルート
+# 画像配信
 # =========================
 
 @app.route("/uploads/<filename>")
@@ -58,7 +76,7 @@ def uploaded_file(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
 # =========================
-# 通常推論
+# 推論
 # =========================
 
 def predict(img_array):
@@ -74,102 +92,113 @@ def predict(img_array):
 # GradCAM
 # =========================
 
-def gradcam(img_array,img_path):
+def gradcam(img_array, img_path):
 
-    last_conv_layer=None
+    last_conv_layer = None
 
     for layer in reversed(model.layers):
-
         if "conv" in layer.name:
-            last_conv_layer=layer.name
+            last_conv_layer = layer.name
             break
 
-    grad_model=tf.keras.models.Model(
+    if last_conv_layer is None:
+        return None
+
+    grad_model = tf.keras.models.Model(
         inputs=model.inputs,
-        outputs=[model.get_layer(last_conv_layer).output,model.output]
+        outputs=[model.get_layer(last_conv_layer).output, model.output]
     )
 
-    x=np.expand_dims(img_array,axis=0)
-    x=preprocess_input(x)
+    x = np.expand_dims(img_array, axis=0)
+    x = preprocess_input(x)
 
     with tf.GradientTape() as tape:
 
-        conv_outputs,predictions=grad_model(x)
-        class_idx=tf.argmax(predictions[0])
-        loss=predictions[:,class_idx]
+        conv_outputs, predictions = grad_model(x)
+        class_idx = tf.argmax(predictions[0])
+        loss = predictions[:, class_idx]
 
-    grads=tape.gradient(loss,conv_outputs)
-    pooled_grads=tf.reduce_mean(grads,axis=(0,1,2))
+    grads = tape.gradient(loss, conv_outputs)
 
-    conv_outputs=conv_outputs[0]
-    heatmap=conv_outputs @ pooled_grads[...,tf.newaxis]
-    heatmap=tf.squeeze(heatmap)
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
 
-    heatmap=np.maximum(heatmap,0)
+    conv_outputs = conv_outputs[0]
 
-    if np.max(heatmap)!=0:
-        heatmap/=np.max(heatmap)
+    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
 
-    img=cv2.imread(img_path)
-    h,w=img.shape[:2]
+    heatmap = np.maximum(heatmap, 0)
 
-    heatmap=cv2.resize(heatmap,(w,h))
-    heatmap=np.uint8(255*heatmap)
-    heatmap=cv2.applyColorMap(heatmap,cv2.COLORMAP_JET)
+    if np.max(heatmap) != 0:
+        heatmap /= np.max(heatmap)
 
-    superimposed_img=heatmap*0.4+img
+    img = cv2.imread(img_path)
+    h, w = img.shape[:2]
 
-    filename=f"gradcam_{uuid.uuid4().hex}.jpg"
-    heatmap_path=os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    heatmap = cv2.resize(heatmap, (w, h))
+    heatmap = np.uint8(255 * heatmap)
 
-    cv2.imwrite(heatmap_path,superimposed_img)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+
+    superimposed_img = heatmap * 0.4 + img
+
+    filename = f"gradcam_{uuid.uuid4().hex}.jpg"
+
+    heatmap_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+
+    cv2.imwrite(heatmap_path, superimposed_img)
 
     return filename
 
 # =========================
-# ルート
+# メインページ
 # =========================
 
-@app.route("/",methods=["GET","POST"])
-
+@app.route("/", methods=["GET", "POST"])
 def index():
 
-    if request.method=="POST":
+    if request.method == "POST":
 
-        file=request.files["file"]
+        if "file" not in request.files:
+            return render_template("index.html")
 
-        filename=f"{uuid.uuid4().hex}.jpg"
+        file = request.files["file"]
 
-        filepath=os.path.join(
+        if file.filename == "":
+            return render_template("index.html")
+
+        filename = f"{uuid.uuid4().hex}.jpg"
+
+        filepath = os.path.join(
             app.config["UPLOAD_FOLDER"],
             filename
         )
 
         file.save(filepath)
 
-        img=image.load_img(filepath,target_size=(img_size,img_size))
-        img_array=image.img_to_array(img)
+        img = image.load_img(filepath, target_size=(img_size, img_size))
+        img_array = image.img_to_array(img)
 
-        pred=predict(img_array)
+        pred = predict(img_array)
 
-        top3=np.argsort(pred)[-3:][::-1]
+        top3 = np.argsort(pred)[-3:][::-1]
 
-        results=[]
+        results = []
 
         for i in top3:
 
-            label=idx_to_class.get(int(i),"Unknown")
+            label = idx_to_class.get(int(i), "Unknown")
 
             results.append(
-                (label,round(float(pred[i])*100,2))
+                (label, round(float(pred[i]) * 100, 2))
             )
 
-        #gradcam_filename=gradcam(img_array,filepath)
+        gradcam_filename = gradcam(img_array, filepath)
 
         return render_template(
             "index.html",
             image=f"/uploads/{filename}",
-            gradcam=None,
+            gradcam=f"/uploads/{gradcam_filename}" if gradcam_filename else None,
             results=results
         )
 
@@ -180,5 +209,10 @@ def index():
 # =========================
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT",8080))
-    app.run(host="0.0.0.0",port=port)
+
+    port = int(os.environ.get("PORT", 8080))
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
