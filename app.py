@@ -1,4 +1,12 @@
 import os
+
+# ====================================================
+# 【重要】Keras 3 ではなく古い Keras 2 (Legacy) を強制使用
+# ====================================================
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ['TF_FORCE_CPU_MAX_VM_SIZE'] = '512'
+
 import json
 import cv2
 import uuid
@@ -10,14 +18,7 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.efficientnet import preprocess_input
 
-# =========================
-# TensorFlow メモリ制限設定
-# =========================
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-# TensorFlowがメモリを独占しないように制限
-os.environ['TF_FORCE_CPU_MAX_VM_SIZE'] = '512'
-
-# スレッド数を1に制限してメモリ消費を最小化
+# CPUスレッドを制限（Render無料枠の安定化）
 tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.config.threading.set_inter_op_parallelism_threads(1)
 
@@ -30,24 +31,31 @@ IMG_SIZE = 224
 global_model = None
 global_labels = None
 
-# =========================
-# モデルの遅延読み込み（メモリ節約版）
-# =========================
+# ====================================================
+# モデルの遅延読み込み（メモリ節約 & バージョン互換対応）
+# ====================================================
 def load_dog_ai():
     global global_model, global_labels
     if global_model is not None:
         return global_model, global_labels
 
-    print("--- Starting Model Load (Memory Optimization Mode) ---")
+    print("--- Starting Model Load (Legacy Keras Mode) ---")
     model_path = "dog_mixup_model.keras"
     
     try:
-        # 読み込み前に不要なメモリを解放
+        # メモリ解放
         gc.collect()
         
-        # compile=False は必須（学習用パラメータを読み込まないため軽量になる）
-        global_model = load_model(model_path, compile=False)
-        
+        # モデル読み込み（Keras 2系として読み込む）
+        # もしこれでもエラーが出る場合は tf_keras を使う
+        try:
+            global_model = load_model(model_path, compile=False)
+        except Exception as e:
+            print(f"Standard load failed, trying tf_keras: {e}")
+            import tf_keras
+            global_model = tf_keras.models.load_model(model_path, compile=False)
+            
+        # ラベル・インデックス読み込み
         with open("dog_labels_ja.json", encoding="utf-8") as f:
             labels_raw = json.load(f)
         with open("class_indices.json") as f:
@@ -55,22 +63,12 @@ def load_dog_ai():
         
         global_labels = {int(v): labels_raw.get(k, k) for k, v in indices_raw.items()}
         
-        # 読み込み後にも掃除
         gc.collect()
         print("--- Model Loaded Successfully ---")
         return global_model, global_labels
     except Exception as e:
         print(f"FATAL ERROR DURING LOAD: {e}")
         return None, None
-
-# =========================
-# GradCAMは一旦停止（コメントアウト）
-# =========================
-"""
-def get_gradcam(img_array, img_path, model, scale=0.4):
-    # メモリ節約のため、一旦無効化
-    return None
-"""
 
 @app.route("/uploads/<filename>")
 def uploaded_file(filename):
@@ -79,10 +77,10 @@ def uploaded_file(filename):
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        # 判定時にモデルをロード
+        # 判定ボタンが押された時にモデルをロード
         model, idx_to_class = load_dog_ai()
         if model is None:
-            return "モデルの初期化に失敗しました。ファイル名やメモリ制限を確認してください。", 500
+            return "モデルの初期化に失敗しました。Kerasの互換性エラーまたはメモリ不足の可能性があります。", 500
 
         try:
             if "file" not in request.files:
@@ -92,7 +90,7 @@ def index():
             if file.filename == "":
                 return render_template("index.html")
 
-            # 保存
+            # 画像保存
             filename = f"{uuid.uuid4().hex}.jpg"
             filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             file.save(filepath)
@@ -104,10 +102,10 @@ def index():
             x = np.expand_dims(img_array, axis=0)
             x = preprocess_input(x)
             
-            # 推論（CPU負荷を抑えるためにverbose=0）
+            # 推論
             pred = model.predict(x, verbose=0)[0]
             
-            # 結果の整理
+            # 結果作成
             top3_idx = np.argsort(pred)[-3:][::-1]
             results = []
             for i in top3_idx:
@@ -115,14 +113,14 @@ def index():
                 score = round(float(pred[i]) * 100, 2)
                 results.append((class_name, score))
 
-            # メモリ解放を促進
+            # メモリ解放
             del img_array
             gc.collect()
 
             return render_template(
                 "index.html",
                 image=f"/uploads/{filename}",
-                gradcam=None, # GradCAMは表示しない
+                gradcam=None, # メモリ節約のためGradCAMはOFF
                 results=results
             )
         except Exception as e:
