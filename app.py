@@ -1,51 +1,44 @@
 import os
-# メモリ設定を最優先
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
-os.environ["TF_FORCE_CPU_MAX_VM_SIZE"] = "512"
-
 import json
-import gc
-import numpy as np
 import uuid
+import numpy as np
+import cv2
 from flask import Flask, render_template, request, send_from_directory
+# tflite_runtime を使用（tensorflow本体は不要）
+import tflite_runtime.interpreter as tflite
 
 app = Flask(__name__)
 UPLOAD_FOLDER = "/tmp/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# グローバル変数を空で用意
-global_model = None
-global_labels = None
+# 起動時にインタープリター（推論エンジン）を準備
+MODEL_PATH = "dog_mixup_model.tflite"
+interpreter = tflite.Interpreter(model_path=MODEL_PATH)
+interpreter.allocate_tensors()
 
-def load_model_on_demand():
-    global global_model, global_labels
-    if global_model is not None:
-        return global_model, global_labels
+# 入出力の情報を取得
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 
-    # 判定ボタンが押された時だけ、ここで重いライブラリとモデルを読み込む
-    import tensorflow as tf
-    
-    # スレッド制限でメモリバーストを防止
-    tf.config.threading.set_intra_op_parallelism_threads(1)
-    tf.config.threading.set_inter_op_parallelism_threads(1)
-    
-    model_path = "dog_mixup_model.h5"
-    
-    # モデルロード
-    global_model = tf.keras.models.load_model(model_path, compile=False)
-    
-    # ラベルロード
-    with open("dog_labels_ja.json", encoding="utf-8") as f:
-        labels_raw = json.load(f)
-    with open("class_indices.json") as f:
-        indices_raw = json.load(f)
-    
-    global_labels = {int(v): labels_raw.get(k, k) for k, v in indices_raw.items()}
-    
-    gc.collect()
-    return global_model, global_labels
+# ラベルの読み込み
+with open("dog_labels_ja.json", encoding="utf-8") as f:
+    dog_labels = json.load(f)
+with open("class_indices.json") as f:
+    class_indices = json.load(f)
+idx_to_class = {int(v): dog_labels.get(k, k) for k, v in class_indices.items()}
+
+def preprocess_for_tflite(img_path):
+    # OpenCVで読み込んで前処理（EfficientNetB0用: 224x224, 0-255）
+    img = cv2.imread(img_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img, (224, 224))
+    img = img.astype(np.float32)
+    # EfficientNetの前処理（通常は tf.keras.applications.efficientnet.preprocess_input）
+    # 実体は平均を引いて分散で割る等だが、B0は入力がそのままでも動くことが多い。
+    # ここでは一般的な224x224の正規化を想定。
+    img = np.expand_dims(img, axis=0)
+    return img
 
 @app.route("/uploads/<filename>")
 def uploaded_file(filename):
@@ -54,41 +47,27 @@ def uploaded_file(filename):
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        try:
-            # モデルを呼び出す（初回のみロードが走る）
-            model, idx_to_class = load_model_on_demand()
-            
-            # 画像処理ライブラリもここでインポート
-            import tensorflow as tf
-            from tensorflow.keras.preprocessing import image
-            from tensorflow.keras.applications.efficientnet import preprocess_input
+        file = request.files.get("file")
+        if not file or file.filename == "":
+            return render_template("index.html")
 
-            file = request.files.get("file")
-            if not file or file.filename == "":
-                return render_template("index.html")
+        filename = f"{uuid.uuid4().hex}.jpg"
+        filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+        file.save(filepath)
 
-            filename = f"{uuid.uuid4().hex}.jpg"
-            filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-            file.save(filepath)
-
-            # 推論処理
-            img = image.load_img(filepath, target_size=(224, 224))
-            img_array = image.img_to_array(img)
-            x = np.expand_dims(img_array, axis=0)
-            x = preprocess_input(x)
-            
-            pred = model.predict(x, verbose=0)[0]
-            top3_idx = np.argsort(pred)[-3:][::-1]
-            results = [(idx_to_class.get(int(i), "不明"), round(float(pred[i])*100, 2)) for i in top3_idx]
-
-            # メモリ掃除
-            del img_array
-            gc.collect()
-
-            return render_template("index.html", image=f"/uploads/{filename}", results=results)
+        # TFLiteで推論
+        input_data = preprocess_for_tflite(filepath)
+        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.invoke()
         
-        except Exception as e:
-            return f"判定エラーが発生しました: {e}", 500
+        # 結果の取得
+        output_data = interpreter.get_tensor(output_details[0]['index'])[0]
+        
+        # Top-3の抽出
+        top3_idx = np.argsort(output_data)[-3:][::-1]
+        results = [(idx_to_class.get(int(i), "不明"), round(float(output_data[i])*100, 2)) for i in top3_idx]
+
+        return render_template("index.html", image=f"/uploads/{filename}", results=results)
 
     return render_template("index.html")
 
