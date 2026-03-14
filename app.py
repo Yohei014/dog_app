@@ -32,7 +32,7 @@ img_size = 300
 # モデルロード
 # =========================
 
-model = load_model("dog_model.keras", compile=False)
+model = load_model("dog_model.h5", compile=False)
 
 with open("dog_labels_ja.json", encoding="utf-8") as f:
     dog_labels = json.load(f)
