@@ -1,12 +1,4 @@
 import os
-
-# ====================================================
-# 【重要】Keras 3 ではなく古い Keras 2 (Legacy) を強制使用
-# ====================================================
-os.environ["TF_USE_LEGACY_KERAS"] = "1"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ['TF_FORCE_CPU_MAX_VM_SIZE'] = '512'
-
 import json
 import cv2
 import uuid
@@ -18,7 +10,13 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.efficientnet import preprocess_input
 
-# CPUスレッドを制限（Render無料枠の安定化）
+# =========================
+# TensorFlow メモリ・動作設定
+# =========================
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ['TF_FORCE_CPU_MAX_VM_SIZE'] = '512'
+
+# スレッド数を制限（Render無料枠の安定化）
 tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.config.threading.set_inter_op_parallelism_threads(1)
 
@@ -31,31 +29,27 @@ IMG_SIZE = 224
 global_model = None
 global_labels = None
 
-# ====================================================
-# モデルの遅延読み込み（メモリ節約 & バージョン互換対応）
-# ====================================================
+# =========================
+# モデルの遅延読み込み (.h5対応版)
+# =========================
 def load_dog_ai():
     global global_model, global_labels
     if global_model is not None:
         return global_model, global_labels
 
-    print("--- Starting Model Load (Legacy Keras Mode) ---")
-    model_path = "dog_mixup_model.keras"
+    print("--- Starting Model Load (.h5 format) ---")
+    # ファイル名を .h5 に変更
+    model_path = "dog_mixup_model.h5"
     
+    if not os.path.exists(model_path):
+        print(f"ERROR: {model_path} not found!")
+        return None, None
+
     try:
-        # メモリ解放
         gc.collect()
+        # .h5形式は既定の load_model で安定して読み込めます
+        global_model = load_model(model_path, compile=False)
         
-        # モデル読み込み（Keras 2系として読み込む）
-        # もしこれでもエラーが出る場合は tf_keras を使う
-        try:
-            global_model = load_model(model_path, compile=False)
-        except Exception as e:
-            print(f"Standard load failed, trying tf_keras: {e}")
-            import tf_keras
-            global_model = tf_keras.models.load_model(model_path, compile=False)
-            
-        # ラベル・インデックス読み込み
         with open("dog_labels_ja.json", encoding="utf-8") as f:
             labels_raw = json.load(f)
         with open("class_indices.json") as f:
@@ -77,10 +71,9 @@ def uploaded_file(filename):
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        # 判定ボタンが押された時にモデルをロード
         model, idx_to_class = load_dog_ai()
         if model is None:
-            return "モデルの初期化に失敗しました。Kerasの互換性エラーまたはメモリ不足の可能性があります。", 500
+            return "モデルの読み込みに失敗しました。.h5ファイルが正しく配置されているか確認してください。", 500
 
         try:
             if "file" not in request.files:
@@ -90,7 +83,7 @@ def index():
             if file.filename == "":
                 return render_template("index.html")
 
-            # 画像保存
+            # 保存
             filename = f"{uuid.uuid4().hex}.jpg"
             filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             file.save(filepath)
@@ -105,7 +98,7 @@ def index():
             # 推論
             pred = model.predict(x, verbose=0)[0]
             
-            # 結果作成
+            # 結果整理
             top3_idx = np.argsort(pred)[-3:][::-1]
             results = []
             for i in top3_idx:
@@ -113,19 +106,18 @@ def index():
                 score = round(float(pred[i]) * 100, 2)
                 results.append((class_name, score))
 
-            # メモリ解放
             del img_array
             gc.collect()
 
             return render_template(
                 "index.html",
                 image=f"/uploads/{filename}",
-                gradcam=None, # メモリ節約のためGradCAMはOFF
+                gradcam=None, # メモリ節約のためOFF
                 results=results
             )
         except Exception as e:
             print(f"POST Error: {e}")
-            return f"実行エラー: {e}", 500
+            return f"判定中にエラーが発生しました: {e}", 500
 
     return render_template("index.html")
 

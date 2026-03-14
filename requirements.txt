@@ -1,10 +1,8 @@
 Flask==2.3.3
 gunicorn==21.2.0
 tensorflow-cpu==2.15.0
-keras==2.15.0
+# keras や tf_keras の明示的な指定は削除してもOK
 numpy==1.23.5
 Pillow==10.0.0
 opencv-python-headless==4.8.0.76
-# 以下の2つを明示的に追加してバージョンを固定
-tf_keras==2.15.0
 h5py==3.10.0
