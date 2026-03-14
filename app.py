@@ -29,7 +29,7 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 img_size = 300
 
 # =========================
-# モデルロード（起動時1回のみ）
+# モデルロード
 # =========================
 
 model = load_model("dog_model.h5")
@@ -50,7 +50,7 @@ for folder_name, index in class_indices.items():
         idx_to_class[index] = folder_name
 
 # =========================
-# 画像配信用ルート（重要）
+# 画像配信用ルート
 # =========================
 
 @app.route("/uploads/<filename>")
@@ -58,28 +58,17 @@ def uploaded_file(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
 # =========================
-# TTA推論
+# 通常推論
 # =========================
 
-def tta_predict(img_array):
+def predict(img_array):
 
-    imgs = [
-        img_array,
-        np.fliplr(img_array),
-        np.rot90(img_array,1),
-        np.rot90(img_array,3),
-    ]
+    x = np.expand_dims(img_array, axis=0)
+    x = preprocess_input(x)
 
-    crop = img_array[30:270,30:270]
-    crop = cv2.resize(crop,(img_size,img_size))
-    imgs.append(crop)
+    preds = model.predict(x, verbose=0)
 
-    imgs = np.array(imgs)
-    imgs = preprocess_input(imgs)
-
-    preds = model.predict(imgs,verbose=0)
-
-    return np.mean(preds,axis=0)
+    return preds[0]
 
 # =========================
 # GradCAM
@@ -161,7 +150,7 @@ def index():
         img=image.load_img(filepath,target_size=(img_size,img_size))
         img_array=image.img_to_array(img)
 
-        pred=tta_predict(img_array)
+        pred=predict(img_array)
 
         top3=np.argsort(pred)[-3:][::-1]
 
