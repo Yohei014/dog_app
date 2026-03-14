@@ -35,9 +35,13 @@ IMG_SIZE = 224  # EfficientNetB0推論用
 # =========================
 # モデルロード
 # =========================
-print("Loading model...")
-model = load_model("dog_mixup_model.keras", compile=False)
-print("Model loaded")
+try:
+    print("Loading model...")
+    model = load_model("dog_mixup_model.keras", compile=False)
+    print("Model loaded successfully")
+except Exception as e:
+    print(f"Error loading model: {e}")
+    # ここでエラーが出れば、ログに詳細が表示されます
 
 # =========================
 # ラベルロード
