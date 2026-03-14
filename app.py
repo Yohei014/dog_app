@@ -17,13 +17,13 @@ from tensorflow.keras.applications.efficientnet import preprocess_input
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 tf.get_logger().setLevel("ERROR")
 
-# GPUを無効化
+# GPU無効化
 try:
     tf.config.set_visible_devices([], "GPU")
 except:
     pass
 
-# スレッド制限（メモリ節約）
+# スレッド制限
 tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.config.threading.set_inter_op_parallelism_threads(1)
 
@@ -36,7 +36,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-img_size = 300
+# EfficientNetB0
+img_size = 224
 
 # =========================
 # モデルロード
@@ -44,7 +45,7 @@ img_size = 300
 
 print("Loading model...")
 
-model = load_model("dog_model.h5", compile=False)
+model = load_model("dog_mixup_model.keras", compile=False)
 
 print("Model loaded")
 
@@ -76,7 +77,7 @@ def uploaded_file(filename):
     return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
 # =========================
-# 推論
+# 推論（高速化版）
 # =========================
 
 def predict(img_array):
@@ -84,18 +85,19 @@ def predict(img_array):
     x = np.expand_dims(img_array, axis=0)
     x = preprocess_input(x)
 
-    preds = model.predict(x, verbose=0)
+    preds = model(x, training=False).numpy()
 
     return preds[0]
 
 # =========================
-# GradCAM
+# 軽量GradCAM
 # =========================
 
 def gradcam(img_array, img_path):
 
     last_conv_layer = None
 
+    # EfficientNetの最後のconvを取得
     for layer in reversed(model.layers):
         if "conv" in layer.name:
             last_conv_layer = layer.name
@@ -115,12 +117,13 @@ def gradcam(img_array, img_path):
     with tf.GradientTape() as tape:
 
         conv_outputs, predictions = grad_model(x)
+
         class_idx = tf.argmax(predictions[0])
         loss = predictions[:, class_idx]
 
     grads = tape.gradient(loss, conv_outputs)
 
-    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+    pooled_grads = tf.reduce_mean(grads, axis=(0,1,2))
 
     conv_outputs = conv_outputs[0]
 
@@ -133,6 +136,7 @@ def gradcam(img_array, img_path):
         heatmap /= np.max(heatmap)
 
     img = cv2.imread(img_path)
+
     h, w = img.shape[:2]
 
     heatmap = cv2.resize(heatmap, (w, h))
@@ -140,13 +144,13 @@ def gradcam(img_array, img_path):
 
     heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
 
-    superimposed_img = heatmap * 0.4 + img
+    superimposed = heatmap * 0.4 + img
 
     filename = f"gradcam_{uuid.uuid4().hex}.jpg"
 
     heatmap_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
 
-    cv2.imwrite(heatmap_path, superimposed_img)
+    cv2.imwrite(heatmap_path, superimposed)
 
     return filename
 
@@ -193,6 +197,7 @@ def index():
                 (label, round(float(pred[i]) * 100, 2))
             )
 
+        # GradCAM生成
         gradcam_filename = gradcam(img_array, filepath)
 
         return render_template(
