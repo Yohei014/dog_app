@@ -1,79 +1,88 @@
-header {
-    background-color: #76B55B;
-    height: 60px;
-    margin: 0; /* -8pxは不要です。bodyにmargin:0を推奨 */
-    display: flex;
-    flex-direction: row-reverse;
-    justify-content: space-between;
-}
-
-/* bodyの余白を消して隙間をなくす */
 body {
     margin: 0;
     font-family: sans-serif;
+    color: #444;
+}
+
+header {
+    background-color: #76B55B;
+    height: 60px;
+    display: flex;
+    flex-direction: row-reverse;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .header-logo {
     color: #fff;
-    text-decoration: none; /* 下線を消す */
-    font-size: 25px;
-    margin: 15px 25px;
+    text-decoration: none;
+    font-size: 22px;
+    margin-right: 25px;
 }
 
-/* ★ここが修正ポイント★ */
 .main {
-    min-height: 500px; /* 高さ固定(height)をやめ、最低限の高さ(min-height)にする */
-    padding-bottom: 50px; /* 下に少し余裕を持たせる */
+    min-height: calc(100vh - 170px);
+    padding: 40px 20px;
     text-align: center;
 }
 
-h2 {
-    color: #444444;
-    margin: 40px 0; /* 90pxは広すぎるので少し調整 */
+/* ドラッグ＆ドロップエリアの装飾 */
+#drop-area {
+    border: 3px dashed #76B55B;
+    border-radius: 20px;
+    padding: 40px;
+    width: 80%;
+    max-width: 400px;
+    margin: 20px auto;
+    cursor: pointer;
+    background-color: #f9fff6;
+    transition: background-color 0.3s;
 }
 
-p {
-    color: #444444;
-    margin: 20px 0; /* 70pxから調整 */
+#drop-area.dragover {
+    background-color: #e2f3d8;
+    border-color: #5e9148;
 }
 
-/* 識別結果エリアのスタイル */
-.result-area {
-    margin-top: 30px;
+#preview-area img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 10px;
+    margin-top: 10px;
 }
 
-.answer {
-    color: #444444;
-    margin: 30px 0;
-}
-
-form {
-    text-align: center;
-    margin-bottom: 20px;
-}
-
-/* ボタンを押しやすくする */
 .btn {
     background-color: #76B55B;
     color: white;
-    padding: 10px 20px;
+    padding: 12px 30px;
     border: none;
-    border-radius: 5px;
+    border-radius: 25px;
+    font-size: 16px;
     cursor: pointer;
+    margin-top: 20px;
+}
+
+.result-area {
+    margin-top: 40px;
+    background: #f1f1f1;
+    padding: 20px;
+    border-radius: 15px;
+    display: inline-block;
+}
+
+.result-img {
+    max-width: 250px;
+    border-radius: 10px;
 }
 
 footer {
     background-color: #F7F7F7;
     height: 110px;
-    width: 100%;
-    margin: 0;
     position: relative;
-    clear: both; /* 上の要素と重ならないようにする */
 }
 
 small {
-    margin: 15px 25px;
     position: absolute;
-    left: 0;
-    bottom: 10px;
+    left: 25px;
+    bottom: 20px;
 }

@@ -1,87 +1,51 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
-
 <head>
-
-<meta charset="UTF-8">
-<title>犬種判定AI</title>
-
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-<script src="{{ url_for('static', filename='script.js') }}" defer></script>
-
+    <meta charset="UTF-8">
+    <title>Dog Breed Classifier</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='stylesheet.css') }}">
 </head>
-
 <body>
+    <header>
+        <a class="header-logo" href="#">Dog Breed Classifier</a>
+    </header>
 
-<div class="container">
+    <div class="main">
+        <h2>AIが犬種を識別します</h2>
+        <p>画像をドロップするか、枠内をクリックして選択してください</p>
 
-<h1>🐶 犬種判定AI</h1>
+        <form method="POST" action="/" enctype="multipart/form-data" onsubmit="showLoading()">
+            <div id="drop-area">
+                <p id="drop-text">ここに画像をドロップ</p>
+                <div id="preview-area"></div>
+                <input type="file" name="file" id="file-input" accept="image/*" style="display: none;">
+            </div>
+            
+            <input class="btn" value="識別を開始する" type="submit">
+        </form>
 
-<form method="POST" enctype="multipart/form-data" onsubmit="showLoading()">
+        <div id="loading" style="display:none; margin: 20px; color: #555;">
+            <div class="spinner"></div>
+            <p>AIが一生懸命考えています...</p>
+        </div>
 
-<div class="upload-box" id="drop-area">
+        {% if results %}
+        <div class="result-area">
+            <h3>識別結果</h3>
+            <img src="{{ image }}" class="result-img">
+            <ul>
+            {% for breed, prob in results %}
+                <li><strong>{{ breed }}</strong>: {{ prob }}%</li>
+            {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
 
-<p>画像をドラッグ＆ドロップ<br>またはクリックして選択</p>
+    <footer>
+        <small>&copy; 2026 Dog Classifier</small>
+    </footer>
 
-<input type="file" name="file" id="file-input" accept="image/*">
-
-</div>
-
-<div id="preview-area"></div>
-
-<button type="submit" class="btn">判定する</button>
-
-</form>
-
-<div id="loading" class="loading">
-
-AI解析中...
-
-</div>
-
-{% if image %}
-
-<h2>GradCAM</h2>
-
-<div class="slider-container">
-
-<img src="{{image}}" class="image-base">
-
-{% if gradcam %}
-<img src="{{gradcam}}" class="image-overlay" id="gradcam">
-{% endif %}
-
-<input type="range" min="0" max="100" value="50" id="cam-slider">
-
-</div>
-
-<h2>判定結果</h2>
-
-<div class="result-box">
-
-{% for r in results %}
-
-<div class="result-item">
-
-<div class="label">{{r[0]}}</div>
-
-<div class="bar-container">
-
-<div class="bar" style="width: {{r[1]}}%"></div>
-
-</div>
-
-<div class="percent">{{r[1]}}%</div>
-
-</div>
-
-{% endfor %}
-
-</div>
-
-{% endif %}
-
-</div>
-
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
