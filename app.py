@@ -2,25 +2,26 @@ import os
 import json
 import uuid
 import numpy as np
-import cv2
 from flask import Flask, render_template, request, send_from_directory
+from PIL import Image
 
 app = Flask(__name__)
 app.config["UPLOAD_FOLDER"] = "/tmp/uploads"
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-# 起動時は「空」にしておく
+# 必要な時だけ読み込む（メモリ節約）
 interpreter = None
 idx_to_class = None
 
 def get_resources():
     global interpreter, idx_to_class
     if interpreter is None:
-        # ここで初めてインポート（メモリ節約）
         import tflite_runtime.interpreter as tflite
+        # モデル名は学習コードで保存した名前に合わせてください
         interpreter = tflite.Interpreter(model_path="dog_model.tflite")
         interpreter.allocate_tensors()
         
+        # ラベルデータの読み込み（これらもGitHubに必要です）
         with open("dog_labels_ja.json", encoding="utf-8") as f:
             dog_labels = json.load(f)
         with open("class_indices.json") as f:
@@ -41,14 +42,15 @@ def index():
             if not file or file.filename == "":
                 return render_template("index.html")
 
-            filepath = os.path.join(app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}.jpg")
+            # 保存
+            filename = f"{uuid.uuid4().hex}.jpg"
+            filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             file.save(filepath)
 
-            # OpenCVによる軽量な処理
-            img = cv2.imread(filepath)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.resize(img, (224, 224)).astype(np.float32)
-            input_data = np.expand_dims(img, axis=0)
+            # Pillowで画像処理（OpenCVより軽量）
+            img = Image.open(filepath).convert('RGB')
+            img = img.resize((224, 224))
+            input_data = np.expand_dims(np.array(img).astype(np.float32), axis=0)
 
             # 推論
             input_details = interp.get_input_details()
@@ -57,12 +59,11 @@ def index():
             interp.invoke()
             output_data = interp.get_tensor(output_details[0]['index'])[0]
             
+            # 結果取得
             top3_idx = np.argsort(output_data)[-3:][::-1]
-            results = [(labels.get(int(i), "不明"), round(float(output_data[i])*100, 2)) for i in top3_idx]
+            results = [(labels.get(int(i), "unknown"), round(float(output_data[i])*100, 2)) for i in top3_idx]
 
-            import gc
-            gc.collect()
-            return render_template("index.html", image=f"/uploads/{os.path.basename(filepath)}", results=results)
+            return render_template("index.html", image=f"/uploads/{filename}", results=results)
         except Exception as e:
             return f"Error: {e}", 500
     return render_template("index.html")
