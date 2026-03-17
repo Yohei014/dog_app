@@ -2,44 +2,56 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dog Breed Classifier</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='stylesheet.css') }}">
 </head>
 <body>
     <header>
-        <a class="header-logo" href="#">Dog Breed Classifier</a>
+        <div class="container">
+            <a class="header-logo" href="/">Dog Classifier</a>
+        </div>
     </header>
 
     <div class="main">
-        <h2>AIが犬種を識別します</h2>
-        <p>画像をドロップするか、枠内をクリックして選択してください</p>
+        <div class="container">
+            <h2>AI犬種識別</h2>
+            <p class="subtitle">120種類の犬種を瞬時に見分けます</p>
 
-        <form method="POST" action="/" enctype="multipart/form-data" onsubmit="showLoading()">
-            <div id="drop-area">
-                <p id="drop-text">ここに画像をドロップ</p>
-                <div id="preview-area"></div>
-                <input type="file" name="file" id="file-input" accept="image/*" style="display: none;">
+            <form method="POST" action="/" enctype="multipart/form-data" onsubmit="showLoading()">
+                <div id="drop-area">
+                    <div id="preview-area">
+                        <div class="upload-icon">📸</div>
+                        <p>画像をドロップするか、クリックして選択</p>
+                    </div>
+                    <input type="file" name="file" id="file-input" accept="image/*" style="display: none;">
+                </div>
+                <input class="btn" value="識別を開始する" type="submit">
+            </form>
+
+            <div id="loading" style="display:none;">
+                <div class="spinner"></div>
+                <p>解析中...</p>
             </div>
-            
-            <input class="btn" value="識別を開始する" type="submit">
-        </form>
 
-        <div id="loading" style="display:none; margin: 20px; color: #555;">
-            <div class="spinner"></div>
-            <p>AIが一生懸命考えています...</p>
+            {% if results %}
+            <div class="result-area animate-fade-in">
+                <h3>識別結果</h3>
+                <img src="{{ image }}" class="result-img">
+                <ul class="result-list">
+                {% for breed, prob in results %}
+                    <li>
+                        <span class="breed-name">{{ breed }}</span>
+                        <div class="prob-bar-container">
+                            <div class="prob-bar" style="width: {{ prob }}%;"></div>
+                        </div>
+                        <span class="prob-value">{{ prob }}%</span>
+                    </li>
+                {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
         </div>
-
-        {% if results %}
-        <div class="result-area">
-            <h3>識別結果</h3>
-            <img src="{{ image }}" class="result-img">
-            <ul>
-            {% for breed, prob in results %}
-                <li><strong>{{ breed }}</strong>: {{ prob }}%</li>
-            {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
     </div>
 
     <footer>
